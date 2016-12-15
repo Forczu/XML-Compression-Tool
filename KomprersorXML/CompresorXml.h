@@ -29,18 +29,49 @@ protected:
 	char * _contents;
 
 	/// <summary>
-	/// Mapa zawierajaca znaczniki i odpowiadajace im liczby id
+	/// Mapa zawierajaca nazwy znacznikow i odpowiadajace im liczby id
 	/// </summary>
-	std::unordered_map<std::string, int> _markupMap;
+	std::unordered_map<std::string, int> _markupNameMap;
 
 	/// <summary>
-	/// Pomocniczy licznik dla znacznikow przy kompresji
+	/// Mapa zawierajaca wartosci znacznikow i odpowiadajace im liczby id
 	/// </summary>
-	int _markupCounter;
+	std::unordered_map<std::string, int> _markupValueMap;
+
+	/// <summary>
+	/// Mapa zawierajaca nazwy atrybutow i odpowiadajace im liczby id
+	/// </summary>
+	std::unordered_map<std::string, int> _attributeMap;
+
+	/// <summary>
+	/// Mapa zawierajaca wartosci atrybutow i odpowiadajace im liczby id
+	/// </summary>
+	std::unordered_map<std::string, int> _attributeValueMap;
+
+	/// <summary>
+	/// Pomocniczy licznik dla nazw znacznikow przy kompresji
+	/// </summary>
+	int _markupNameCounter;
+
+	/// <summary>
+	/// Pomocniczy licznik dla wartosci znacznikow przy kompresji
+	/// </summary>
+	int _markupValueCounter;
+
+	/// <summary>
+	/// Pomocniczy licznik dla atrybutow przy kompresji
+	/// </summary>
+	int _attributeCounter;
+
+	/// <summary>
+	/// Pomocniczy licznik dla atrybutow przy kompresji
+	/// </summary>
+	int _attributeValueCounter;
 
 public:
-	CompresorXml() : _contents(nullptr), _markupCounter(0)
+	CompresorXml() : _contents(nullptr)
 	{
+		_markupNameCounter = _attributeCounter = 0;
 	}
 
 	~CompresorXml()
@@ -90,7 +121,7 @@ public:
 				for (int i = 0; i < tabulators; ++i)
 					output += '\t';
 				// zapis id zamiast nazwy
-				std::string nodeId = std::to_string(_markupMap[nodeName]);
+				std::string nodeId = std::to_string(_markupNameMap[nodeName]);
 				output += nodeId;
 			}
 			// zapis atrybutow wezla
@@ -98,11 +129,11 @@ public:
 			{
 				std::string attribute;
 				attribute += ' ';
-				attribute += atr->name();
-				attribute += '=';
-				//attribute += '\"';
-				attribute += atr->value();
-				//attribute += '\"';
+				std::string attrId = std::to_string(_attributeMap[atr->name()]);
+				attribute += attrId;
+				attribute += ' ';// '=';
+				std::string attrValueId = std::to_string(_attributeValueMap[atr->value()]);
+				attribute += attrValueId;
 				output += attribute;
 			}
 			// zapis wartosci wezla
@@ -111,7 +142,8 @@ public:
 			if (hasValue)
 			{
 				output += ' ';
-				output += value;
+				std::string valueId = std::to_string(_attributeValueMap[value]);
+				output += valueId;
 			}
 			// zapis dzieci wezla
 			auto firstChild = node->first_node();
@@ -180,11 +212,30 @@ private:
 	/// <param name="firstNode">Pierwszy wezel.</param>
 	void allMarkupsToHashMap(xml_node<> * firstNode)
 	{
+		// wezly
 		for (xml_node<>* node = firstNode; node; node = node->next_sibling())
 		{
+			// nazwa znacznika
 			std::string nodeName = node->name();
-			if (!nodeName.empty() && _markupMap.find(nodeName) == _markupMap.end())
-				_markupMap[nodeName] = _markupCounter++;
+			if (!nodeName.empty() && _markupNameMap.find(nodeName) == _markupNameMap.end())
+				_markupNameMap[nodeName] = _markupNameCounter++;
+			// wartosc znacznika
+			std::string nodeValue = node->value();
+			if (!nodeValue.empty() && _markupValueMap.find(nodeName) == _markupValueMap.end())
+				_markupValueMap[nodeValue] = _markupValueCounter++;
+			// atrybuty
+			for (xml_attribute<>* atr = node->first_attribute(); atr; atr = atr->next_attribute())
+			{
+				// nazwa atrybutu
+				std::string attrName = atr->name();
+				if (!attrName.empty() && _attributeMap.find(attrName) == _attributeMap.end())
+					_attributeMap[attrName] = _attributeCounter++;
+				std::string attrValue = atr->value();
+				// wartosc atrybutu
+				if (!attrValue.empty() && _attributeValueMap.find(attrValue) == _attributeValueMap.end())
+					_attributeValueMap[attrValue] = _attributeValueCounter++;
+			}
+			// dzieci w wezle
 			auto firstChild = node->first_node();
 			if (firstChild != NULL)
 				allMarkupsToHashMap(firstChild);
