@@ -14,10 +14,10 @@ using namespace rapidxml;
 /// </summary>
 class CompresorXml
 {
+protected:
 	static const int NODE_END_SIGN = -1;
 	static const int NODE_HEAD_END_SIGN = -2;
 
-protected:
 	/// <summary>
 	/// Struktura reprezentujaca oryginalny plik Xml
 	/// </summary>
@@ -28,25 +28,28 @@ protected:
 	/// </summary>
 	char * _contents;
 
+	// typ mapy haszujacej dla danych z xml wejsciowego
+	typedef std::unordered_map<std::string, int> InputHashMap;
+
 	/// <summary>
 	/// Mapa zawierajaca nazwy znacznikow i odpowiadajace im liczby id
 	/// </summary>
-	std::unordered_map<std::string, int> _markupNameMap;
+	InputHashMap _markupNameMap;
 
 	/// <summary>
 	/// Mapa zawierajaca wartosci znacznikow i odpowiadajace im liczby id
 	/// </summary>
-	std::unordered_map<std::string, int> _markupValueMap;
+	InputHashMap _markupValueMap;
 
 	/// <summary>
 	/// Mapa zawierajaca nazwy atrybutow i odpowiadajace im liczby id
 	/// </summary>
-	std::unordered_map<std::string, int> _attributeMap;
+	InputHashMap _attributeNameMap;
 
 	/// <summary>
 	/// Mapa zawierajaca wartosci atrybutow i odpowiadajace im liczby id
 	/// </summary>
-	std::unordered_map<std::string, int> _attributeValueMap;
+	InputHashMap _attributeValueMap;
 
 	/// <summary>
 	/// Pomocniczy licznik dla nazw znacznikow przy kompresji
@@ -98,6 +101,7 @@ public:
 	{
 		std::string output;
 		int tabulators = 0;
+		saveMaps(output);
 		saveCompressed(_doc.first_node(), output, tabulators);
 		std::ofstream file(filePath);
 		file << output.c_str();
@@ -129,7 +133,7 @@ public:
 			{
 				std::string attribute;
 				attribute += ' ';
-				std::string attrId = std::to_string(_attributeMap[atr->name()]);
+				std::string attrId = std::to_string(_attributeNameMap[atr->name()]);
 				attribute += attrId;
 				attribute += ' ';// '=';
 				std::string attrValueId = std::to_string(_attributeValueMap[atr->value()]);
@@ -228,8 +232,8 @@ private:
 			{
 				// nazwa atrybutu
 				std::string attrName = atr->name();
-				if (!attrName.empty() && _attributeMap.find(attrName) == _attributeMap.end())
-					_attributeMap[attrName] = _attributeCounter++;
+				if (!attrName.empty() && _attributeNameMap.find(attrName) == _attributeNameMap.end())
+					_attributeNameMap[attrName] = _attributeCounter++;
 				std::string attrValue = atr->value();
 				// wartosc atrybutu
 				if (!attrValue.empty() && _attributeValueMap.find(attrValue) == _attributeValueMap.end())
@@ -242,4 +246,30 @@ private:
 		}
 	}
 
+	void saveMaps(std::string & output)
+	{
+		saveMap("Markups names", _markupNameMap, output);
+		saveMap("Markups values", _markupValueMap, output);
+		saveMap("Attributes names", _attributeNameMap, output);
+		saveMap("Attributes names", _attributeValueMap, output);
+		output += '\n';
+	}
+
+	void saveMap(std::string const & name, InputHashMap const & map, std::string & output)
+	{
+		output += name + ':' + '\n';
+		for (InputHashMap::const_iterator it = map.begin(); it != map.end(); ++it)
+		{
+			output += std::to_string(it->second);
+			output += ' ';
+			output += ':';
+			output += ' ';
+			output += std::to_string(it->first.size());
+			output += ' ';
+			output += ':';
+			output += ' ';
+			output += it->first;
+			output += '\n';
+		}
+	}
 };
