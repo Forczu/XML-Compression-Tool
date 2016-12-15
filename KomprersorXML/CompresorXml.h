@@ -2,6 +2,8 @@
 #include <unordered_map>
 #include <vector>
 #include <fstream>
+#include <string> 
+#include <iostream>
 #include "rapidxml\rapidxml.hpp"
 #include "rapidxml\rapidxml_print.hpp"
 
@@ -12,6 +14,9 @@ using namespace rapidxml;
 /// </summary>
 class CompresorXml
 {
+	static const int NODE_END_SIGN = -1;
+	static const int NODE_HEAD_END_SIGN = -2;
+
 protected:
 	/// <summary>
 	/// Struktura reprezentujaca oryginalny plik Xml
@@ -26,7 +31,7 @@ protected:
 	/// <summary>
 	/// Mapa zawierajaca znaczniki i odpowiadajace im liczby id
 	/// </summary>
-	std::unordered_map<int, std::string> _markupMap;
+	std::unordered_map<std::string, int> _markupMap;
 
 	/// <summary>
 	/// Pomocniczy licznik dla znacznikow przy kompresji
@@ -60,13 +65,72 @@ public:
 	/// <param name="filePath">Sciezka do pliku.</param>
 	void saveEncodedToFile(std::string const & filePath)
 	{
-		saveCompressed(_doc.first_node());
+		std::string output;
+		int tabulators = 0;
+		saveCompressed(_doc.first_node(), output, tabulators);
+		std::ofstream file(filePath);
+		file << output.c_str();
+		file.close();
 	}
 
-	void saveCompressed(xml_node<>* firstNode)
+	/// <summary>
+	/// Zapis wezla i jego dzieci do czytelnej formy
+	/// </summary>
+	/// <param name="firstNode">Wezel.</param>
+	/// <param name="output">Miejsce, gdzie wezel jako string zostanie zapisany.</param>
+	/// <param name="tabulators">Wielkosc tabulacji.</param>
+	void saveCompressed(xml_node<>* firstNode, std::string & output, int tabulators)
 	{
 		for (xml_node<>* node = firstNode; node; node = node->next_sibling())
 		{
+			// zapis nazwy wezla
+			std::string nodeName = node->name();
+			if (!nodeName.empty())
+			{
+				for (int i = 0; i < tabulators; ++i)
+					output += '\t';
+				// zapis id zamiast nazwy
+				std::string nodeId = std::to_string(_markupMap[nodeName]);
+				output += nodeId;
+			}
+			// zapis atrybutow wezla
+			for (xml_attribute<>* atr = node->first_attribute(); atr; atr = atr->next_attribute())
+			{
+				std::string attribute;
+				attribute += ' ';
+				attribute += atr->name();
+				attribute += '=';
+				//attribute += '\"';
+				attribute += atr->value();
+				//attribute += '\"';
+				output += attribute;
+			}
+			// zapis wartosci wezla
+			auto value = node->value();
+			bool hasValue = value != NULL && strlen(value) != 0;
+			if (hasValue)
+			{
+				output += ' ';
+				output += value;
+			}
+			// zapis dzieci wezla
+			auto firstChild = node->first_node();
+			bool hasChildren = firstChild != NULL && strlen(firstChild->name()) != 0;
+			if (hasChildren)
+			{
+				output += ' ';
+				output += std::to_string(NODE_HEAD_END_SIGN);
+				output += '\n';
+				saveCompressed(firstChild, output, tabulators + 1);
+			}
+			// zapis znaku konca wezla
+			if (hasChildren)
+				for (int i = 0; i < tabulators; ++i)
+					output += '\t';
+			else
+				output += ' ';
+			output += std::to_string(NODE_END_SIGN);
+			output += '\n';
 		}
 	}
 
@@ -119,28 +183,12 @@ private:
 		for (xml_node<>* node = firstNode; node; node = node->next_sibling())
 		{
 			std::string nodeName = node->name();
-			if (!nodeName.empty() && !mapHasValue(_markupMap, nodeName))
-				_markupMap[_markupCounter++] = nodeName;
+			if (!nodeName.empty() && _markupMap.find(nodeName) == _markupMap.end())
+				_markupMap[nodeName] = _markupCounter++;
 			auto firstChild = node->first_node();
 			if (firstChild != NULL)
 				allMarkupsToHashMap(firstChild);
 		}
-	}
-
-	/// <summary>
-	/// Sprawdza czy mapa zawiera wskazana wartosc.
-	/// </summary>
-	/// <param name="map">The map.</param>
-	/// <param name="value">The value.</param>
-	/// <returns>True, jesli wartosc istnieje w mapie, false, jesli nie</returns>
-	bool mapHasValue(std::unordered_map<int, std::string> const & map, std::string const & value)
-	{
-		for (std::unordered_map<int, std::string>::const_iterator it = map.cbegin(); it != map.cend(); ++it)
-		{
-			if (it->second == value)
-				return true;
-		}
-		return false;
 	}
 
 };
