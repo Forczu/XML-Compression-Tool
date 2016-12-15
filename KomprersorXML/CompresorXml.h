@@ -4,6 +4,7 @@
 #include <fstream>
 #include <string> 
 #include <iostream>
+#include <stack>
 #include "rapidxml\rapidxml.hpp"
 #include "rapidxml\rapidxml_print.hpp"
 
@@ -18,6 +19,12 @@ protected:
 	static const int NODE_END_SIGN = -1;
 	static const int NODE_HEAD_END_SIGN = -2;
 
+	static const int MARKUP_NAMES_ID = -3;
+	static const int MARKUP_VALUES_ID = -4;
+	static const int ATTRIBUTE_NAMES_ID = -5;
+	static const int ATTRIBUTE_VALUES_ID = -6;
+	static const int MAPS_END = -7;
+
 	/// <summary>
 	/// Struktura reprezentujaca oryginalny plik Xml
 	/// </summary>
@@ -30,6 +37,9 @@ protected:
 
 	// typ mapy haszujacej dla danych z xml wejsciowego
 	typedef std::unordered_map<std::string, int> InputHashMap;
+
+	// typ mapy haszujacej dla danych ze skompresowanego pliku
+	typedef std::unordered_map<int, std::string> OutputHashMap;
 
 	/// <summary>
 	/// Mapa zawierajaca nazwy znacznikow i odpowiadajace im liczby id
@@ -71,10 +81,17 @@ protected:
 	/// </summary>
 	int _attributeValueCounter;
 
+	OutputHashMap _markupNameMap2;
+	OutputHashMap _markupValueMap2;
+	OutputHashMap _attributeNameMap2;
+	OutputHashMap _attributeValueMap2;
+
+	std::stack<std::string> _lastOpenedNodes;
+
 public:
 	CompresorXml() : _contents(nullptr)
 	{
-		_markupNameCounter = _attributeCounter = 0;
+		_markupNameCounter = _markupValueCounter = _attributeCounter = _attributeValueCounter = 0;
 	}
 
 	~CompresorXml()
@@ -146,7 +163,7 @@ public:
 			if (hasValue)
 			{
 				output += ' ';
-				std::string valueId = std::to_string(_attributeValueMap[value]);
+				std::string valueId = std::to_string(_markupValueMap[value]);
 				output += valueId;
 			}
 			// zapis dzieci wezla
@@ -168,6 +185,25 @@ public:
 			output += std::to_string(NODE_END_SIGN);
 			output += '\n';
 		}
+	}
+
+	void saveEncodedToBinaryFile(std::string const & filePath)
+	{
+		std::ofstream file(filePath, std::ios::binary);
+		saveMaps(file);
+		saveXml(_doc.first_node(), file);
+	}
+
+	void readEncodedBinaryFile(std::string const & source, std::string const & target)
+	{
+		std::ifstream file(source, std::ios::binary);
+		std::string xml;
+		readMaps(file);
+		readXml(file, xml, 0);
+		file.close();
+		std::ofstream out(target);
+		out << xml;
+		out.close();
 	}
 
 private:
@@ -248,16 +284,17 @@ private:
 
 	void saveMaps(std::string & output)
 	{
-		saveMap("Markups names", _markupNameMap, output);
-		saveMap("Markups values", _markupValueMap, output);
-		saveMap("Attributes names", _attributeNameMap, output);
-		saveMap("Attributes names", _attributeValueMap, output);
+		saveMap(MARKUP_NAMES_ID, _markupNameMap, output);
+		saveMap(MARKUP_VALUES_ID, _markupValueMap, output);
+		saveMap(ATTRIBUTE_NAMES_ID, _attributeNameMap, output);
+		saveMap(ATTRIBUTE_VALUES_ID, _attributeValueMap, output);
 		output += '\n';
+		output += std::to_string(MAPS_END) + '\n';
 	}
 
-	void saveMap(std::string const & name, InputHashMap const & map, std::string & output)
+	void saveMap(int id, InputHashMap const & map, std::string & output)
 	{
-		output += name + ':' + '\n';
+		output += std::to_string(id) + '\n';
 		for (InputHashMap::const_iterator it = map.begin(); it != map.end(); ++it)
 		{
 			output += std::to_string(it->second);
@@ -271,5 +308,169 @@ private:
 			output += it->first;
 			output += '\n';
 		}
+	}
+
+	void saveMaps(std::ofstream & file)
+	{
+		saveMap(MARKUP_NAMES_ID, _markupNameMap, file);
+		saveMap(MARKUP_VALUES_ID, _markupValueMap, file);
+		saveMap(ATTRIBUTE_NAMES_ID, _attributeNameMap, file);
+		saveMap(ATTRIBUTE_VALUES_ID, _attributeValueMap, file);
+		file.write((char*)&MAPS_END, sizeof(int));
+	}
+
+	void saveMap(int id, InputHashMap const & map, std::ofstream & file)
+	{
+		size_t size;
+		file.write((char*)&id, sizeof(int));
+		for (InputHashMap::const_iterator it = map.begin(); it != map.end(); ++it)
+		{
+			file.write((char*)&it->second, sizeof(int));
+			size = it->first.size();
+			file.write((char*)&size, sizeof(size_t));
+			file.write((char*)it->first.c_str(), size + 1);
+		}
+	}
+
+	void readMaps(std::ifstream & file)
+	{
+		int * id = new int;
+		file.read((char*)id, sizeof(int));
+		int id2 = *id;
+		delete id;
+		if (id2 != MARKUP_NAMES_ID)
+			return;
+		readMap(file, _markupNameMap2, MARKUP_VALUES_ID);
+		readMap(file, _markupValueMap2, ATTRIBUTE_NAMES_ID);
+		readMap(file, _attributeNameMap2, ATTRIBUTE_VALUES_ID);
+		readMap(file, _attributeValueMap2, MAPS_END);
+	}
+
+	void readMap(std::ifstream & file, OutputHashMap & map, int endSign)
+	{
+		int * id = new int;
+		size_t * size = new size_t;
+		char * value;
+		// odczytanie wartosci do mapy
+		file.read((char*)id, sizeof(int));
+		do
+		{
+			file.read((char*)size, sizeof(size_t));
+			value = new char[*size + 1];
+			file.read(value, *size + 1);
+			map[*id] = value;
+			delete[] value;
+			file.read((char*)id, sizeof(int));
+		} while (*id != endSign);
+		delete id, delete size;
+	}
+
+	void saveXml(xml_node<>* firstNode, std::ofstream & file)
+	{
+		for (xml_node<>* node = firstNode; node; node = node->next_sibling())
+		{
+			// zapis nazwy wezla
+			std::string nodeName = node->name();
+			if (!nodeName.empty())
+			{
+				int nodeId = _markupNameMap[nodeName];
+				file.write((char*)&nodeId, sizeof(int));
+			}
+			// zapis atrybutow wezla
+			for (xml_attribute<>* atr = node->first_attribute(); atr; atr = atr->next_attribute())
+			{
+				int attrId = _attributeNameMap[atr->name()];
+				file.write((char*)&attrId, sizeof(int));
+				int attrValueId = _attributeValueMap[atr->value()];
+				file.write((char*)&attrValueId, sizeof(int));
+			}
+			// zapis wartosci wezla
+			auto value = node->value();
+			bool hasValue = value != NULL && strlen(value) != 0;
+			if (hasValue)
+			{
+				int valueId = _markupValueMap[value];
+				file.write((char*)&valueId, sizeof(int));
+			}
+			// zapis dzieci wezla
+			auto firstChild = node->first_node();
+			bool hasChildren = firstChild != NULL && strlen(firstChild->name()) != 0;
+			if (hasChildren)
+			{
+				file.write((char*)&NODE_HEAD_END_SIGN, sizeof(int));
+				saveXml(firstChild, file);
+			}
+			// zapis znaku konca wezla
+			file.write((char*)&NODE_END_SIGN, sizeof(int));
+		}
+	}
+
+	void readXml(std::ifstream & file, std::string & xml, int tabulators)
+	{
+		int * id = new int;
+		int * value = new int;
+		do
+		{
+			file.read((char*)id, sizeof(int));
+			if (*id == NODE_END_SIGN)
+			{
+				std::string name = _lastOpenedNodes.top();
+				_lastOpenedNodes.pop();
+				for (int i = 0; i < tabulators - 1; ++i)
+					xml += '\t';
+				xml += "</" + name + ">\n";
+				break;
+			}
+			std::string nodeName = _markupNameMap2[*id];
+			for (int i = 0; i < tabulators; ++i)
+				xml += '\t';
+			xml += '<' + nodeName;
+			file.read((char*)id, sizeof(int));
+			if (*id == NODE_END_SIGN)
+			{
+				xml += "/>\n";
+			}
+			else if (*id == NODE_HEAD_END_SIGN)
+			{
+				xml += ">\n";
+				_lastOpenedNodes.push(nodeName);
+				readXml(file, xml, tabulators + 1);
+			}
+			else
+			{
+				std::streampos oldpos = file.tellg();
+				file.read((char*)value, sizeof(int));
+				if (*value == NODE_END_SIGN)
+				{
+					std::string nodeValue = _markupValueMap2[*id];
+					xml += '>' + nodeValue + "</" + nodeName + ">\n";
+				}
+				else
+				{
+					file.seekg(oldpos);
+					do
+					{
+						file.read((char*)value, sizeof(int));
+						std::string attrName = _attributeNameMap2[*id];
+						std::string attrValue = _attributeValueMap2[*value];
+						xml += ' ' + attrName + "=\"" + attrValue + "\"";
+						file.read((char*)id, sizeof(int));
+					} while (*id != NODE_END_SIGN && *id != NODE_HEAD_END_SIGN);
+					if (*id == NODE_END_SIGN)
+					{
+						xml += "/>\n";
+					}
+					else
+					{
+						xml += ">\n";
+						_lastOpenedNodes.push(nodeName);
+						readXml(file, xml, tabulators + 1);
+					}
+				}
+			}
+			if (_lastOpenedNodes.empty())
+				break;
+		} while (true);
+		delete id, value;
 	}
 };
