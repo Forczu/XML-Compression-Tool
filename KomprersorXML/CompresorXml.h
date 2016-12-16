@@ -7,6 +7,7 @@
 #include <stack>
 #include "rapidxml\rapidxml.hpp"
 #include "rapidxml\rapidxml_print.hpp"
+#include "LzssCoder.h"
 
 using namespace rapidxml;
 
@@ -88,10 +89,20 @@ protected:
 
 	std::stack<std::string> _lastOpenedNodes;
 
+	std::string markupValues;
+	std::string attributeValues;
+
+	std::string markupValueSource;
+	std::string attributeValueSource;
+
+	int markupValueSourcePos;
+	int attributeValueSourcePos;
+
 public:
 	CompresorXml() : _contents(nullptr)
 	{
 		_markupNameCounter = _markupValueCounter = _attributeCounter = _attributeValueCounter = 0;
+		markupValueSourcePos = attributeValueSourcePos = 0;
 	}
 
 	~CompresorXml()
@@ -190,17 +201,65 @@ public:
 	void saveEncodedToBinaryFile(std::string const & filePath)
 	{
 		std::ofstream file(filePath, std::ios::binary);
+
 		saveMaps(file);
-		saveXml(_doc.first_node(), file);
+		file.close();
+
+		LzssCoder lzss;
+		lzss.encode(markupValues, filePath);
+
+		file.open(filePath, std::ios::binary | std::ios::app);
+
+		std::vector<int> xml;
+		saveXml(_doc.first_node(), xml);
+		lzss.encode(xml, filePath);
+
+		file.close();
 	}
 
 	void readEncodedBinaryFile(std::string const & source, std::string const & target)
 	{
-		std::ifstream file(source, std::ios::binary);
+		std::ifstream file(source, std::ios::binary | std::ios::in);
 		std::string xml;
 		readMaps(file);
-		readXml(file, xml, 0);
+		std::streampos currPos = file.tellg();
 		file.close();
+
+		int pos = currPos;
+		LzssCoder lzss;
+		markupValueSource = lzss.decode(source, pos);
+
+		file.open(source, std::ios::binary | std::ios::app);
+		file.seekg(std::ios_base::beg);
+		file.seekg(pos);
+		char a;
+		std::streampos lastPos;
+		while (true)
+		{
+			lastPos = file.tellg();
+			file.read(&a, sizeof(char));
+			if (a == '!')
+				break;
+		}
+		file.close();
+		pos = lastPos;
+
+		std::string numbersStr = lzss.decode(source, pos);
+
+		std::deque<int> numbers;
+		std::string numStr;
+		for (std::string::const_iterator it = numbersStr.cbegin(); it != numbersStr.end(); ++it)
+		{
+			if (*it != ' ')
+				numStr += *it;
+			else
+			{
+				numbers.push_back(std::stoi(numStr));
+				numStr = "";
+			}
+		}
+		readXml(numbers, xml, 0);
+
 		std::ofstream out(target);
 		out << xml;
 		out.close();
@@ -261,8 +320,10 @@ private:
 				_markupNameMap[nodeName] = _markupNameCounter++;
 			// wartosc znacznika
 			std::string nodeValue = node->value();
-			if (!nodeValue.empty() && _markupValueMap.find(nodeName) == _markupValueMap.end())
-				_markupValueMap[nodeValue] = _markupValueCounter++;
+			//if (!nodeValue.empty() && _markupValueMap.find(nodeName) == _markupValueMap.end())
+			if (!nodeValue.empty() && !nodeName.empty())
+				markupValues += nodeValue;
+				//_markupValueMap[nodeValue] = _markupValueCounter++;
 			// atrybuty
 			for (xml_attribute<>* atr = node->first_attribute(); atr; atr = atr->next_attribute())
 			{
@@ -270,8 +331,8 @@ private:
 				std::string attrName = atr->name();
 				if (!attrName.empty() && _attributeNameMap.find(attrName) == _attributeNameMap.end())
 					_attributeNameMap[attrName] = _attributeCounter++;
-				std::string attrValue = atr->value();
 				// wartosc atrybutu
+				std::string attrValue = atr->value();
 				if (!attrValue.empty() && _attributeValueMap.find(attrValue) == _attributeValueMap.end())
 					_attributeValueMap[attrValue] = _attributeValueCounter++;
 			}
@@ -313,7 +374,7 @@ private:
 	void saveMaps(std::ofstream & file)
 	{
 		saveMap(MARKUP_NAMES_ID, _markupNameMap, file);
-		saveMap(MARKUP_VALUES_ID, _markupValueMap, file);
+		//saveMap(MARKUP_VALUES_ID, _markupValueMap, file);
 		saveMap(ATTRIBUTE_NAMES_ID, _attributeNameMap, file);
 		saveMap(ATTRIBUTE_VALUES_ID, _attributeValueMap, file);
 		file.write((char*)&MAPS_END, sizeof(int));
@@ -340,8 +401,8 @@ private:
 		delete id;
 		if (id2 != MARKUP_NAMES_ID)
 			return;
-		readMap(file, _markupNameMap2, MARKUP_VALUES_ID);
-		readMap(file, _markupValueMap2, ATTRIBUTE_NAMES_ID);
+		readMap(file, _markupNameMap2, ATTRIBUTE_NAMES_ID);
+		//readMap(file, _markupValueMap2, ATTRIBUTE_NAMES_ID);
 		readMap(file, _attributeNameMap2, ATTRIBUTE_VALUES_ID);
 		readMap(file, _attributeValueMap2, MAPS_END);
 	}
@@ -385,12 +446,12 @@ private:
 				file.write((char*)&attrValueId, sizeof(int));
 			}
 			// zapis wartosci wezla
-			auto value = node->value();
-			bool hasValue = value != NULL && strlen(value) != 0;
+			std::string value = node->value();
+			bool hasValue = !value.empty() && value.size() != 0;
 			if (hasValue)
 			{
-				int valueId = _markupValueMap[value];
-				file.write((char*)&valueId, sizeof(int));
+				int valueSize = value.size();
+				file.write((char*)&valueSize, sizeof(int));
 			}
 			// zapis dzieci wezla
 			auto firstChild = node->first_node();
@@ -402,6 +463,46 @@ private:
 			}
 			// zapis znaku konca wezla
 			file.write((char*)&NODE_END_SIGN, sizeof(int));
+		}
+	}
+
+	void saveXml(xml_node<>* firstNode, std::vector<int> & xml)
+	{
+		for (xml_node<>* node = firstNode; node; node = node->next_sibling())
+		{
+			// zapis nazwy wezla
+			std::string nodeName = node->name();
+			if (!nodeName.empty())
+			{
+				int nodeId = _markupNameMap[nodeName];
+				xml.push_back(nodeId);
+			}
+			// zapis atrybutow wezla
+			for (xml_attribute<>* atr = node->first_attribute(); atr; atr = atr->next_attribute())
+			{
+				int attrId = _attributeNameMap[atr->name()];
+				xml.push_back(attrId);
+				int attrValueId = _attributeValueMap[atr->value()];
+				xml.push_back(attrValueId);
+			}
+			// zapis wartosci wezla
+			std::string value = node->value();
+			bool hasValue = !value.empty() && value.size() != 0;
+			if (hasValue)
+			{
+				int valueSize = value.size();
+				xml.push_back(valueSize);
+			}
+			// zapis dzieci wezla
+			auto firstChild = node->first_node();
+			bool hasChildren = firstChild != NULL && strlen(firstChild->name()) != 0;
+			if (hasChildren)
+			{
+				xml.push_back(NODE_HEAD_END_SIGN);
+				saveXml(firstChild, xml);
+			}
+			// zapis znaku konca wezla
+			xml.push_back(NODE_END_SIGN);
 		}
 	}
 
@@ -442,8 +543,9 @@ private:
 				file.read((char*)value, sizeof(int));
 				if (*value == NODE_END_SIGN)
 				{
-					std::string nodeValue = _markupValueMap2[*id];
+					std::string nodeValue = markupValueSource.substr(markupValueSourcePos, *id);
 					xml += '>' + nodeValue + "</" + nodeName + ">\n";
+					markupValueSourcePos += *id;
 				}
 				else
 				{
@@ -468,9 +570,74 @@ private:
 					}
 				}
 			}
-			if (_lastOpenedNodes.empty())
-				break;
-		} while (true);
+		} while (!_lastOpenedNodes.empty());
 		delete id, value;
+	}
+
+	void readXml(std::deque<int> & numbers, std::string & xml, int tabulators)
+	{
+		int id, value;
+		do
+		{
+			id = numbers.front(); numbers.pop_front();
+			if (id == NODE_END_SIGN)
+			{
+				std::string name = _lastOpenedNodes.top();
+				_lastOpenedNodes.pop();
+				for (int i = 0; i < tabulators - 1; ++i)
+					xml += '\t';
+				xml += "</" + name + ">\n";
+				break;
+			}
+			std::string nodeName = _markupNameMap2[id];
+			for (int i = 0; i < tabulators; ++i)
+				xml += '\t';
+			xml += '<' + nodeName;
+			id = numbers.front(); numbers.pop_front();
+			if (id == NODE_END_SIGN)
+			{
+				xml += "/>\n";
+			}
+			else if (id == NODE_HEAD_END_SIGN)
+			{
+				xml += ">\n";
+				_lastOpenedNodes.push(nodeName);
+				readXml(numbers, xml, tabulators + 1);
+			}
+			else
+			{
+				//std::streampos oldpos = file.tellg();
+				value = numbers.front();
+				if (value == NODE_END_SIGN)
+				{
+					numbers.pop_front();
+					std::string nodeValue = markupValueSource.substr(markupValueSourcePos, id);
+					xml += '>' + nodeValue + "</" + nodeName + ">\n";
+					markupValueSourcePos += id;
+				}
+				else
+				{
+					//file.seekg(oldpos);
+					do
+					{
+						value = numbers.front(); numbers.pop_front();
+						std::string attrName = _attributeNameMap2[id];
+						std::string attrValue = _attributeValueMap2[value];
+						xml += ' ' + attrName + "=\"" + attrValue + "\"";
+						id = numbers.front(); numbers.pop_front();
+					} while (id != NODE_END_SIGN && id != NODE_HEAD_END_SIGN);
+					if (id == NODE_END_SIGN)
+					{
+						xml += "/>\n";
+					}
+					else
+					{
+						xml += ">\n";
+						_lastOpenedNodes.push(nodeName);
+						readXml(numbers, xml, tabulators + 1);
+					}
+				}
+			}
+		} while (!_lastOpenedNodes.empty());
 	}
 };
