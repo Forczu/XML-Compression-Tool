@@ -8,8 +8,10 @@
 #include "rapidxml\rapidxml.hpp"
 #include "rapidxml\rapidxml_print.hpp"
 #include "LzssCoder.h"
+#include "text_encoding_detect.h"
 
 using namespace rapidxml;
+using namespace AutoIt::Common;
 
 /// <summary>
 /// Kompresor plikow Xml
@@ -116,8 +118,16 @@ public:
 	/// <param name="filePath">Sciezka do pliku.</param>
 	void encode(std::string const & filePath)
 	{
-		parse(filePath);
-		allMarkupsToHashMap(_doc.first_node());
+		try
+		{
+			parse(filePath);
+			allMarkupsToHashMap(_doc.first_node());
+			saveEncodedToBinaryFile(filePath + ".bin");
+		}
+		catch (std::runtime_error const & ex)
+		{
+			std::cout << ex.what() << std::endl;
+		}
 	}
 
 	/// <summary>
@@ -201,49 +211,45 @@ public:
 	void saveEncodedToBinaryFile(std::string const & filePath)
 	{
 		std::ofstream file(filePath, std::ios::binary);
-
-		saveMaps(file);
-		file.close();
-
 		LzssCoder lzss;
-		lzss.encode(markupValues, filePath);
+		std::vector<std::string> markups;
+		saveMap(MARKUP_NAMES_ID, _markupNameMap, markups);
+		lzss.encode(markups, filePath);
 
-		file.open(filePath, std::ios::binary | std::ios::app);
+		std::vector<std::string> attributes;
+		saveMap(ATTRIBUTE_NAMES_ID, _attributeNameMap, attributes);
+		lzss.encode(attributes, filePath);
+
+		lzss.encode(markupValues, filePath);
+		lzss.encode(attributeValues, filePath);
 
 		std::vector<int> xml;
 		saveXml(_doc.first_node(), xml);
 		lzss.encode(xml, filePath);
-
-		file.close();
 	}
 
 	void readEncodedBinaryFile(std::string const & source, std::string const & target)
 	{
-		std::ifstream file(source, std::ios::binary | std::ios::in);
+		std::ifstream file;
 		std::string xml;
-		readMaps(file);
-		std::streampos currPos = file.tellg();
-		file.close();
-
-		int pos = currPos;
+		int pos = 0;
 		LzssCoder lzss;
+		
+		changePositionForRangeCoder(file, source, pos, '!');
+		std::string markupNames = lzss.decode(source, pos);
+		readMap(_markupNameMap2, markupNames);
+
+		changePositionForRangeCoder(file, source, pos, '!');
+		std::string attributeNames = lzss.decode(source, pos);
+		readMap(_attributeNameMap2, attributeNames);
+		
+		changePositionForRangeCoder(file, source, pos, '!');
 		markupValueSource = lzss.decode(source, pos);
 
-		file.open(source, std::ios::binary | std::ios::app);
-		file.seekg(std::ios_base::beg);
-		file.seekg(pos);
-		char a;
-		std::streampos lastPos;
-		while (true)
-		{
-			lastPos = file.tellg();
-			file.read(&a, sizeof(char));
-			if (a == '!')
-				break;
-		}
-		file.close();
-		pos = lastPos;
+		changePositionForRangeCoder(file, source, pos, '!');
+		attributeValueSource = lzss.decode(source, pos);
 
+		changePositionForRangeCoder(file, source, pos, '!');
 		std::string numbersStr = lzss.decode(source, pos);
 
 		std::deque<int> numbers;
@@ -283,7 +289,7 @@ private:
 		}
 		catch (rapidxml::parse_error const & e)
 		{
-			return false;
+			return true;
 		}
 	}
 
@@ -302,6 +308,22 @@ private:
 		file.seekg(0);
 		char * out = new char[fileLength + 1];
 		file.read(out, fileLength);
+
+		TextEncodingDetect detect;
+		const unsigned char * inDetect = (unsigned char*)out;
+		TextEncodingDetect::Encoding xmlEncoding = detect.DetectEncoding(inDetect, fileLength);
+		switch (xmlEncoding)
+		{
+		case AutoIt::Common::TextEncodingDetect::None:
+		case AutoIt::Common::TextEncodingDetect::ANSI:
+		case AutoIt::Common::TextEncodingDetect::ASCII:
+			break;
+		default:
+			delete out;
+			std::string message("XML is not encoded in ANSI or ASCII.");
+			throw std::runtime_error(message);
+			break;
+		}
 		return out;
 	}
 
@@ -333,8 +355,10 @@ private:
 					_attributeNameMap[attrName] = _attributeCounter++;
 				// wartosc atrybutu
 				std::string attrValue = atr->value();
-				if (!attrValue.empty() && _attributeValueMap.find(attrValue) == _attributeValueMap.end())
-					_attributeValueMap[attrValue] = _attributeValueCounter++;
+				if (!attrValue.empty() && !attrName.empty())
+					attributeValues += attrValue;
+				//if (!attrValue.empty() && _attributeValueMap.find(attrValue) == _attributeValueMap.end())
+					//_attributeValueMap[attrValue] = _attributeValueCounter++;
 			}
 			// dzieci w wezle
 			auto firstChild = node->first_node();
@@ -376,7 +400,7 @@ private:
 		saveMap(MARKUP_NAMES_ID, _markupNameMap, file);
 		//saveMap(MARKUP_VALUES_ID, _markupValueMap, file);
 		saveMap(ATTRIBUTE_NAMES_ID, _attributeNameMap, file);
-		saveMap(ATTRIBUTE_VALUES_ID, _attributeValueMap, file);
+		//saveMap(ATTRIBUTE_VALUES_ID, _attributeValueMap, file);
 		file.write((char*)&MAPS_END, sizeof(int));
 	}
 
@@ -393,6 +417,17 @@ private:
 		}
 	}
 
+	void saveMap(int id, InputHashMap const & map, std::vector<std::string> & names)
+	{
+		size_t size;
+		//names.push_back(std::to_string(id));
+		for (InputHashMap::const_iterator it = map.begin(); it != map.end(); ++it)
+		{
+			names.push_back(std::to_string(it->second));
+			names.push_back(it->first);
+		}
+	}
+
 	void readMaps(std::ifstream & file)
 	{
 		int * id = new int;
@@ -403,8 +438,8 @@ private:
 			return;
 		readMap(file, _markupNameMap2, ATTRIBUTE_NAMES_ID);
 		//readMap(file, _markupValueMap2, ATTRIBUTE_NAMES_ID);
-		readMap(file, _attributeNameMap2, ATTRIBUTE_VALUES_ID);
-		readMap(file, _attributeValueMap2, MAPS_END);
+		readMap(file, _attributeNameMap2, MAPS_END);
+		//readMap(file, _attributeValueMap2, MAPS_END);
 	}
 
 	void readMap(std::ifstream & file, OutputHashMap & map, int endSign)
@@ -424,6 +459,34 @@ private:
 			file.read((char*)id, sizeof(int));
 		} while (*id != endSign);
 		delete id, delete size;
+	}
+
+	void readMap(OutputHashMap & map, std::string const & names)
+	{
+		enum State { Id, Value };
+		State state = Id;
+		std::string str;
+		int id;
+		for (std::string::const_iterator it = names.cbegin(); it != names.end(); ++it)
+		{
+			if (*it != ' ')
+				str += *it;
+			else
+			{
+				switch (state)
+				{
+				case Id:
+					id = std::stoi(str);
+					state = Value;
+					break;
+				case Value:
+					map[id] = str;
+					state = Id;
+					break;
+				}
+				str = "";
+			}
+		}
 	}
 
 	void saveXml(xml_node<>* firstNode, std::ofstream & file)
@@ -482,11 +545,14 @@ private:
 			{
 				int attrId = _attributeNameMap[atr->name()];
 				xml.push_back(attrId);
-				int attrValueId = _attributeValueMap[atr->value()];
-				xml.push_back(attrValueId);
+				std::string attrValue = atr->value();
+				int attrSize = attrValue.size();
+				xml.push_back(attrSize);
+				//int attrValueId = _attributeValueMap[atr->value()];
+				//xml.push_back(attrValueId);
 			}
 			// zapis wartosci wezla
-			std::string value = node->value();
+			const std::string value = node->value();
 			bool hasValue = !value.empty() && value.size() != 0;
 			if (hasValue)
 			{
@@ -622,22 +688,50 @@ private:
 					{
 						value = numbers.front(); numbers.pop_front();
 						std::string attrName = _attributeNameMap2[id];
-						std::string attrValue = _attributeValueMap2[value];
+						//std::string attrValue = _attributeValueMap2[value];
+						std::string attrValue = attributeValueSource.substr(attributeValueSourcePos, value);
 						xml += ' ' + attrName + "=\"" + attrValue + "\"";
+						attributeValueSourcePos += value;
 						id = numbers.front(); numbers.pop_front();
-					} while (id != NODE_END_SIGN && id != NODE_HEAD_END_SIGN);
+						value = numbers.front();
+					} while (id != NODE_END_SIGN && id != NODE_HEAD_END_SIGN && value != NODE_END_SIGN);
 					if (id == NODE_END_SIGN)
 					{
 						xml += "/>\n";
 					}
-					else
+					else if (id == NODE_HEAD_END_SIGN)
 					{
 						xml += ">\n";
 						_lastOpenedNodes.push(nodeName);
 						readXml(numbers, xml, tabulators + 1);
 					}
+					else
+					{
+						numbers.pop_front();
+						std::string nodeValue = markupValueSource.substr(markupValueSourcePos, id);
+						xml += '>' + nodeValue + "</" + nodeName + ">\n";
+						markupValueSourcePos += id;
+					}
 				}
 			}
 		} while (!_lastOpenedNodes.empty());
+	}
+
+	void changePositionForRangeCoder(std::ifstream & file, std::string const & source, int & pos, char endSign)
+	{
+		file.open(source, std::ios::binary | std::ios::app);
+		file.seekg(std::ios_base::beg);
+		file.seekg(pos);
+		char a;
+		std::streampos lastPos;
+		while (true)
+		{
+			lastPos = file.tellg();
+			file.read(&a, sizeof(char));
+			if (a == endSign)
+				break;
+		}
+		file.close();
+		pos = lastPos;
 	}
 };

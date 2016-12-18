@@ -117,6 +117,7 @@
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="qsmodel.cpp" />
     <ClCompile Include="rangecod.cpp" />
+    <ClCompile Include="text_encoding_detect.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CompresorXml.h" />
@@ -124,6 +125,7 @@
     <ClInclude Include="port.h" />
     <ClInclude Include="qsmodel.h" />
     <ClInclude Include="rangecod.h" />
+    <ClInclude Include="text_encoding_detect.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

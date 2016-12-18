@@ -36,9 +36,7 @@ protected:
 	/// <summary>
 	/// Bufor na wczytane dane
 	/// </summary>
-	//std::string _buffer;
 	char * _buffer;
-
 	int bufSize, bufPos;
 
 	typedef std::vector<int> PositionVector;
@@ -53,6 +51,12 @@ public:
 	}
 
 	void encode(std::vector<int> const & source, std::string const & target)
+	{
+		toBuffer(source);
+		encode(target);
+	}
+
+	void encode(std::vector<std::string> const & source, std::string const & target)
 	{
 		toBuffer(source);
 		encode(target);
@@ -124,7 +128,6 @@ protected:
 		_buffer = new char[bufSize + 1];
 		for (int i = 0; i < bufSize; ++i)
 			_buffer[i] = source[i];
-		//_buffer = source;
 		_buffer[bufSize] = '\0';
 	}
 
@@ -142,6 +145,27 @@ protected:
 		_buffer = new char[bufSize + 1];
 		int index = 0;
 		for (std::vector<std::string>::const_iterator wordIt = words.cbegin(); wordIt != words.cend(); ++wordIt)
+		{
+			for (std::string::const_iterator letterIt = wordIt->cbegin(); letterIt != wordIt->cend(); ++letterIt, ++index)
+			{
+				_buffer[index] = *letterIt;
+			}
+			_buffer[index++] = ' ';
+		}
+		_buffer[bufSize] = '\0';
+	}
+
+	void toBuffer(std::vector<std::string> const & source)
+	{
+		bufSize = 0;
+		for (std::vector<std::string>::const_iterator it = source.cbegin(); it != source.cend(); ++it)
+		{
+			bufSize += it->size();
+			bufSize += 1;
+		}
+		_buffer = new char[bufSize + 1];
+		int index = 0;
+		for (std::vector<std::string>::const_iterator wordIt = source.cbegin(); wordIt != source.cend(); ++wordIt)
 		{
 			for (std::string::const_iterator letterIt = wordIt->cbegin(); letterIt != wordIt->cend(); ++letterIt, ++index)
 			{
@@ -170,6 +194,11 @@ protected:
 				bool seqFound = getLongestSequenceLength(positions, maxOffset, maxLength);
 				if (seqFound)
 				{
+					std::string substr;
+					for (int i = bufPos - maxOffset; i < bufPos - maxOffset + maxLength + 1; ++i)
+					{
+						substr += _buffer[i];
+					}
 					writeTripple(maxOffset, maxLength);
 				}
 				else
@@ -215,7 +244,7 @@ protected:
 		{
 			int position = *it;
 			int offset = bufPos - position;
-			if (offset > MAX_OFFSET)
+			if (offset >= MAX_OFFSET)
 			{
 				it = positions.erase(it);
 				continue;
@@ -223,14 +252,15 @@ protected:
 			int currentLength = 0;
 			int currentPosition = bufPos + currentLength;
 			int myPosition = position + currentLength;
-			while (_buffer[currentPosition] == _buffer[myPosition] && currentLength <= MAX_LENGTH
-				&& currentLength <= offset && myPosition < bufPos)
+			while (_buffer[currentPosition] == _buffer[myPosition]
+				&& currentLength < MAX_LENGTH - 1
+				&& currentLength < offset - 1)
 			{
 				++currentLength;
 				++currentPosition;
 				++myPosition;
 			}
-			if (currentLength > maxLength)
+			if (currentLength > maxLength && currentLength >= MIN_LENGTH)
 			{
 				maxLength = currentLength;
 				maxOffset = bufPos - myPosition + currentLength;
