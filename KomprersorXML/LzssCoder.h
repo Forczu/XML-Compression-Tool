@@ -21,12 +21,12 @@ protected:
 	// zmienne zwiazane z biblioteka range coder
 	rangecoder rc;
 	qsmodel flagModel, letterModel, offsetModel;
-	static const int LENGTH_MODEL_SIZE = 16;
+	static const int LENGTH_MODEL_SIZE = MAX_OFFSET_BITS + 1;
 	qsmodel lengthModel[LENGTH_MODEL_SIZE];
 	static const int FLAG_ALPHABET_SIZE = 3;
-	static const int LETTER_ALPHABET_SIZE = 256;
+	static const int LETTER_ALPHABET_SIZE = 257;
 	static const int OFFSET_ALPHABET_SIZE = 252;
-	static const int LENGTH_ALPHABET_SIZE = 256;
+	static const int LENGTH_ALPHABET_SIZE = MAX_LENGTH;
 	static const int LG_TOTF = 12;
 	static const int RESCALE = 2000;
 	static const int COMPRESS = 1;
@@ -44,34 +44,49 @@ protected:
 	MyMap myMap;
 
 public:
-	void encode(std::string const & source, std::string const & target)
+	void encode(std::string const & source, std::string const & target, int letterAlphabetSize = LETTER_ALPHABET_SIZE)
 	{
 		toBuffer(source);
-		encode(target);
+		encode(target, letterAlphabetSize);
+		delete[] _buffer;
 	}
 
-	void encode(std::vector<int> const & source, std::string const & target)
+	void encode(std::vector<int> const & source, std::string const & target, int letterAlphabetSize = LETTER_ALPHABET_SIZE)
 	{
 		toBuffer(source);
-		encode(target);
+		encode(target, letterAlphabetSize);
+		delete[] _buffer;
 	}
 
-	void encode(std::vector<std::string> const & source, std::string const & target)
+	void encode(std::vector<std::string> const & source, std::string const & target, int letterAlphabetSize = LETTER_ALPHABET_SIZE)
 	{
 		toBuffer(source);
-		encode(target);
+		encode(target, letterAlphabetSize);
+		delete[] _buffer;
 	}
 
-	std::string decode(std::string const & source, int & pos)
+	void encode(std::vector<unsigned char> const & source, std::string const & target, int letterAlphabetSize = LETTER_ALPHABET_SIZE)
+	{
+		toBuffer(source);
+		encode(target, letterAlphabetSize);
+	}
+
+	void toBuffer(std::vector<unsigned char> const & source)
+	{
+		bufSize = source.size();
+		_buffer = (char*)source.data();
+	}
+
+	std::string decode(std::string const & source, int & pos, int letterAlphabetSize = LETTER_ALPHABET_SIZE)
 	{
 		auto in = freopen(source.c_str(), "rb", stdin);
 		fseek(in, pos, SEEK_SET);
 		std::string output;
 		int currentPosition = 0, ch, sysfreq, ltfreq;
-		initializeModels(DECOMPRESS);
+		initializeModels(DECOMPRESS, letterAlphabetSize);
 		// rozpoczecie dekompresji
 		start_decoding(&rc);
-		char symbol;
+		int symbol;
 		while (true)
 		{
 			ltfreq = decode_culshift(&rc, LG_TOTF);
@@ -100,9 +115,9 @@ public:
 				unsigned short newOffset = offset;
 				if (newOffset > MAX_LITTLE_OFFSET)
 				{
-					newOffset += decodeNBits(&rc, 15);
+					newOffset += decodeNBits(&rc, MAX_OFFSET_BITS);
 				}
-				ltfreq = decode_culshift(&rc, 12);
+				ltfreq = decode_culshift(&rc, LG_TOTF);
 				int log = ceilLog2(newOffset);
 				// dlugosc
 				unsigned char length = qsgetsym(&lengthModel[log], ltfreq);
@@ -176,12 +191,12 @@ protected:
 		_buffer[bufSize] = '\0';
 	}
 
-	void encode(std::string const & target)
+	void encode(std::string const & target, int letterAlphabetSize)
 	{
 		myMap.clear();
 		bufPos = 0;
 		auto out = freopen(target.c_str(), "ab", stdout);
-		initializeModels(COMPRESS);
+		initializeModels(COMPRESS, letterAlphabetSize);
 		start_encoding(&rc, 33, 0);
 
 		while (bufPos < bufSize)
@@ -217,13 +232,12 @@ protected:
 		done_encoding(&rc);
 		deleteModels();
 		fclose(out);
-		delete[] _buffer;
 	}
 
-	void initializeModels(int mode)
+	void initializeModels(int mode, int letterAlphabetSize)
 	{
 		initqsmodel(&flagModel, FLAG_ALPHABET_SIZE, LG_TOTF, RESCALE, NULL, mode);
-		initqsmodel(&letterModel, LETTER_ALPHABET_SIZE, LG_TOTF, RESCALE, NULL, mode);
+		initqsmodel(&letterModel, letterAlphabetSize, LG_TOTF, RESCALE, NULL, mode);
 		initqsmodel(&offsetModel, OFFSET_ALPHABET_SIZE, LG_TOTF, RESCALE, NULL, mode);
 		for (int i = 0; i < LENGTH_MODEL_SIZE; i++)
 		{
@@ -288,7 +302,7 @@ protected:
 			unsigned int newOffset = offset - longOffsetSymbol;
 			qsgetfreq(&offsetModel, longOffsetSymbol, &sysfreq, &ltfreq);
 			encode_shift(&rc, sysfreq, ltfreq, LG_TOTF);
-			encodeNBits(&rc, newOffset, 15);
+			encodeNBits(&rc, newOffset, MAX_OFFSET_BITS);
 			qsupdate(&offsetModel, longOffsetSymbol);
 		}
 		// zapis dlugosci slowa
@@ -321,7 +335,7 @@ protected:
 	void loadSymbol(qsmodel & model, int symbol, int & sysfreq, int & ltfreq)
 	{
 		qsgetfreq(&model, symbol, &sysfreq, &ltfreq);
-		decode_update(&rc, sysfreq, ltfreq, 1 << 12);
+		decode_update(&rc, sysfreq, ltfreq, 1 << LG_TOTF);
 		qsupdate(&model, symbol);
 	}
 

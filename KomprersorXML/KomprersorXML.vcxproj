@@ -120,11 +120,15 @@
     <ClCompile Include="text_encoding_detect.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AbstractReadByteStrategy.h" />
     <ClInclude Include="CompresorXml.h" />
     <ClInclude Include="LzssCoder.h" />
     <ClInclude Include="port.h" />
     <ClInclude Include="qsmodel.h" />
     <ClInclude Include="rangecod.h" />
+    <ClInclude Include="ReadFourBytesStrategy.h" />
+    <ClInclude Include="ReadOneByteStrategy.h" />
+    <ClInclude Include="ReadTwoBytesStrategy.h" />
     <ClInclude Include="text_encoding_detect.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
