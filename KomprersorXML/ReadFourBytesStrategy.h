@@ -13,9 +13,9 @@ class ReadFourBytesStrategy : public AbstractReadByteStrategy
 		return a;
 	}
 
-	std::vector<unsigned char> writeToBytes(int paramInt) override
+	std::vector<char> writeToBytes(int paramInt) override
 	{
-		std::vector<unsigned char> bytes = intToBytes(paramInt);
+		std::vector<char> bytes = intToBytes(paramInt);
 		return bytes;
 	}
 

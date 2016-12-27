@@ -4,6 +4,7 @@
 #include <fstream>
 #include <string> 
 #include <iostream>
+#include <algorithm>
 #include <stack>
 #include "rapidxml\rapidxml.hpp"
 #include "rapidxml\rapidxml_print.hpp"
@@ -27,17 +28,17 @@ enum class ReadStrategy : char
 class CompresorXml
 {
 protected:
-	static const unsigned char STRING_FLAG = 0x37;
-	static const unsigned char FLOAT_FLAG = 0x38;
-	static const unsigned char SHORT_FLAG = 0x39;
-	static const unsigned char INT_FLAG = 0x40;
-	static const unsigned char CHAR_FLAG = 0x41;
+	static const char STRING_FLAG = -0x37;
+	static const char FLOAT_FLAG = -0x38;
+	static const char SHORT_FLAG = -0x39;
+	static const char INT_FLAG = -0x40;
+	static const char CHAR_FLAG = -0x41;
 
-	static const unsigned char NEXT_ATTRIBUTE_SIGN = 0x44;
-	static const unsigned char NEXT_VALUE_SIGN = 0x45;
-	static const unsigned char NEXT_CHILDREN_SIGN = 0x46;
-	static const unsigned char NEXT_NODE_END_SIGN = 0x47;
-	static const unsigned char NEXT_NEW_NODE_SIGN = 0x48;
+	std::vector<char> valueTypes;
+
+	static const char NEXT_ATTRIBUTE_SIGN = -0x44;
+	static const char NEXT_CHILDREN_SIGN = -0x46;
+	static const char NEXT_NODE_END_SIGN = -0x47;
 
 	/// <summary>
 	/// Struktura reprezentujaca oryginalny plik Xml
@@ -117,6 +118,11 @@ public:
 	{
 		_markupNameCounter = _markupValueCounter = _attributeCounter = _attributeValueCounter = 0;
 		markupValueSourcePos = attributeValueSourcePos = 0;
+		valueTypes.push_back(STRING_FLAG);
+		valueTypes.push_back(CHAR_FLAG);
+		valueTypes.push_back(SHORT_FLAG);
+		valueTypes.push_back(FLOAT_FLAG);
+		valueTypes.push_back(INT_FLAG);
 	}
 
 	~CompresorXml()
@@ -150,12 +156,12 @@ public:
 		allMarkupsToHashMap(root);
 
 		ReadStrategy markupStr, attrStr;
-		if (_markupNameMap.size() <= UCHAR_MAX - 2)
+		if (_markupNameMap.size() <= CHAR_MAX)
 		{
 			markupStrategy = new ReadOneBytesStrategy;
 			markupStr = ReadStrategy::Char;
 		}
-		else if (_markupNameMap.size() <= USHRT_MAX - 2)
+		else if (_markupNameMap.size() <= SHRT_MAX)
 		{
 			markupStrategy = new ReadTwoBytesStrategy;
 			markupStr = ReadStrategy::Short;
@@ -166,12 +172,12 @@ public:
 			markupStr = ReadStrategy::Int;
 		}
 
-		if (_attributeNameMap.size() <= UCHAR_MAX - 2)
+		if (_attributeNameMap.size() <= CHAR_MAX)
 		{
 			attributeStrategy = new ReadOneBytesStrategy;
 			attrStr = ReadStrategy::Char;
 		}
-		else if (_attributeNameMap.size() <= USHRT_MAX - 2)
+		else if (_attributeNameMap.size() <= SHRT_MAX)
 		{
 			attributeStrategy = new ReadTwoBytesStrategy;
 			attrStr = ReadStrategy::Short;
@@ -186,7 +192,7 @@ public:
 		file.write((char*)&attrStr, sizeof(char));
 		file.close();
 
-		std::vector<unsigned char> * xml = new std::vector<unsigned char>();
+		std::vector<char> * xml = new std::vector<char>();
 		saveXml(root, *xml);
 
 		std::vector<std::string> markups;
@@ -421,16 +427,16 @@ private:
 		return true;
 	}
 
-	std::vector<unsigned char> floatToBytes(float paramFloat)
+	std::vector<char> floatToBytes(float paramFloat)
 	{
 		unsigned char* p = reinterpret_cast<unsigned char*>(&paramFloat);
-		std::vector<unsigned char> arrayOfBytes(p, p + 4);
+		std::vector<char> arrayOfBytes(p, p + 4);
 		return arrayOfBytes;
 	}
 
-	std::vector<unsigned char> stringToValues(std::string const & str, unsigned char & flag)
+	std::vector<char> stringToValues(std::string const & str, char & flag)
 	{
-		std::vector<unsigned char> bytes;
+		std::vector<char> bytes;
 		flag = STRING_FLAG;
 		float f;
 		int i;
@@ -519,7 +525,7 @@ private:
 		return value;
 	}
 
-	void saveXml(xml_node<>* firstNode, std::vector<unsigned char> & xml)
+	void saveXml(xml_node<>* firstNode, std::vector<char> & xml)
 	{
 		for (xml_node<>* node = firstNode; node; node = node->next_sibling())
 		{
@@ -528,8 +534,8 @@ private:
 			if (!nodeName.empty())
 			{
 				int nodeId = _markupNameMap[nodeName];
-				std::vector<unsigned char> bytes = markupStrategy->writeToBytes(nodeId);
-				xml.push_back(NEXT_NEW_NODE_SIGN);
+				std::vector<char> bytes = markupStrategy->writeToBytes(nodeId);
+				//xml.push_back(NEXT_NEW_NODE_SIGN);
 				xml.insert(xml.end(), bytes.begin(), bytes.end());
 			}
 			// zapis atrybutow wezla
@@ -539,11 +545,11 @@ private:
 				// nazwa atrybutu
 				std::string attrName = atr->name();
 				int attrId = _attributeNameMap[attrName];
-				std::vector<unsigned char> bytes = attributeStrategy->writeToBytes(attrId);
+				std::vector<char> bytes = attributeStrategy->writeToBytes(attrId);
 				xml.insert(xml.end(), bytes.begin(), bytes.end());
 				// wartosc atrybutu
 				std::string attrValue = atr->value();
-				unsigned char typeFlag;
+				char typeFlag;
 				bytes = stringToValues(attrValue, typeFlag);
 				if (typeFlag == STRING_FLAG)
 					attributeValues += attrValue;
@@ -555,9 +561,9 @@ private:
 			bool hasValue = !value.empty() && value.size() != 0;
 			if (hasValue)
 			{
-				xml.push_back(NEXT_VALUE_SIGN);
-				unsigned char typeFlag;
-				std::vector<unsigned char> bytes = stringToValues(value, typeFlag);
+				//xml.push_back(NEXT_VALUE_SIGN);
+				char typeFlag;
+				std::vector<char> bytes = stringToValues(value, typeFlag);
 				if (typeFlag == STRING_FLAG)
 					markupValues += value;
 				xml.push_back(typeFlag);
@@ -594,10 +600,11 @@ private:
 		do
 		{
 			// poczatek linii
-			char nextFlag = bytes[index]; ++index;
+			char nextFlag = bytes[index];
 			// flaga zamkniecia otwartego wezla
 			if (nextFlag == NEXT_NODE_END_SIGN)
 			{
+				++index;
 				std::string name = _lastOpenedNodes.top();
 				_lastOpenedNodes.pop();
 				for (int i = 0; i < tabulators - 1; ++i)
@@ -605,44 +612,45 @@ private:
 				xml += "</" + name + ">\n";
 				break;
 			}
-			else if (nextFlag == NEXT_NEW_NODE_SIGN)
+			id = markupStrategy->read(bytes, index);
+			index += markupSize;
+			std::string nodeName = _markupNameMap2[id];
+			for (int i = 0; i < tabulators; ++i)
+				xml += '\t';
+			xml += '<' + nodeName;
+			nextFlag = bytes[index];
+			while (nextFlag == NEXT_ATTRIBUTE_SIGN)
 			{
-				id = markupStrategy->read(bytes, index);
-				index += markupSize;
-				std::string nodeName = _markupNameMap2[id];
-				for (int i = 0; i < tabulators; ++i)
-					xml += '\t';
-				xml += '<' + nodeName;
-				nextFlag = bytes[index];
-				while (nextFlag == NEXT_ATTRIBUTE_SIGN)
-				{
-					++index;
-					id = attributeStrategy->read(bytes, index);
-					index += attributeSize;
-					std::string attrName = _attributeNameMap2[id];
-					nextFlag = bytes[index]; ++index;
-					std::string attrValue = bytesToString(nextFlag, bytes, index, attributeStrategy, attributeValueSource, attributeValueSourcePos);
-					xml += ' ' + attrName + "=\"" + attrValue + "\"";
-					nextFlag = attributeStrategy->read(bytes, index);
-				}
 				++index;
-				if (nextFlag == NEXT_NODE_END_SIGN)
-				{
-					xml += "/>\n";
-				}
-				else if (nextFlag == NEXT_VALUE_SIGN)
-				{
-					nextFlag = bytes[index]; ++index;
-					auto nodeValue = bytesToString(nextFlag, bytes, index, markupStrategy, markupValueSource, markupValueSourcePos);
-					xml += '>' + nodeValue + "</" + nodeName + ">\n";
-				}
-				else if (nextFlag == NEXT_CHILDREN_SIGN)
-				{
-					xml += ">\n";
-					_lastOpenedNodes.push(nodeName);
-					readXml(bytes, xml, index, tabulators + 1);
-				}
+				id = attributeStrategy->read(bytes, index);
+				index += attributeSize;
+				std::string attrName = _attributeNameMap2[id];
+				nextFlag = bytes[index]; ++index;
+				std::string attrValue = bytesToString(nextFlag, bytes, index, attributeStrategy, attributeValueSource, attributeValueSourcePos);
+				xml += ' ' + attrName + "=\"" + attrValue + "\"";
+				nextFlag = attributeStrategy->read(bytes, index);
+			}
+			++index;
+			if (nextFlag == NEXT_NODE_END_SIGN)
+			{
+				xml += "/>\n";
+			}
+			else if (isFlagValueType(nextFlag))
+			{
+				auto nodeValue = bytesToString(nextFlag, bytes, index, markupStrategy, markupValueSource, markupValueSourcePos);
+				xml += '>' + nodeValue + "</" + nodeName + ">\n";
+			}
+			else if (nextFlag == NEXT_CHILDREN_SIGN)
+			{
+				xml += ">\n";
+				_lastOpenedNodes.push(nodeName);
+				readXml(bytes, xml, index, tabulators + 1);
 			}
 		} while (!_lastOpenedNodes.empty());
+	}
+
+	bool isFlagValueType(char flag)
+	{
+		return std::find(valueTypes.begin(), valueTypes.end(), flag) != valueTypes.end();
 	}
 };

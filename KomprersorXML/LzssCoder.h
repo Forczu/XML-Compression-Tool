@@ -65,13 +65,13 @@ public:
 		delete[] _buffer;
 	}
 
-	void encode(std::vector<unsigned char> const & source, std::string const & target, int letterAlphabetSize = LETTER_ALPHABET_SIZE)
+	void encode(std::vector<char> const & source, std::string const & target, int letterAlphabetSize = LETTER_ALPHABET_SIZE)
 	{
 		toBuffer(source);
 		encode(target, letterAlphabetSize);
 	}
 
-	void toBuffer(std::vector<unsigned char> const & source)
+	void toBuffer(std::vector<char> const & source)
 	{
 		bufSize = source.size();
 		_buffer = (char*)source.data();
