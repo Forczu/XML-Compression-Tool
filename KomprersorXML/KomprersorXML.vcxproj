@@ -117,6 +117,10 @@
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="qsmodel.cpp" />
     <ClCompile Include="rangecod.cpp" />
+    <ClCompile Include="ReadByteStrategyFactory.cpp" />
+    <ClCompile Include="ReadFourBytesStrategy.cpp" />
+    <ClCompile Include="ReadOneByteStrategy.cpp" />
+    <ClCompile Include="ReadTwoBytesStrategy.cpp" />
     <ClCompile Include="text_encoding_detect.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -126,8 +130,10 @@
     <ClInclude Include="port.h" />
     <ClInclude Include="qsmodel.h" />
     <ClInclude Include="rangecod.h" />
+    <ClInclude Include="ReadByteStrategyFactory.h" />
     <ClInclude Include="ReadFourBytesStrategy.h" />
     <ClInclude Include="ReadOneByteStrategy.h" />
+    <ClInclude Include="ReadStrategyEnum.h" />
     <ClInclude Include="ReadTwoBytesStrategy.h" />
     <ClInclude Include="text_encoding_detect.h" />
   </ItemGroup>

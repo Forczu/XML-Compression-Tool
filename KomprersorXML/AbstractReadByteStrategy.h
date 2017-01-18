@@ -1,9 +1,15 @@
 #pragma once
 #include <string>
+#include <vector>
 
+/// <summary>
+/// Abstrakcyjna podstawa dla klas definiujacych rozmiar i sposob odczytywania binarnego znacznika XML
+/// </summary>
 class AbstractReadByteStrategy
 {
 public:
+	explicit AbstractReadByteStrategy() { }
+
 	virtual int read(std::string const & str, int & index) = 0;
 
 	virtual std::vector<char> writeToBytes(int paramInt) = 0;

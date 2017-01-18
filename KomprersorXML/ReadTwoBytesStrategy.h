@@ -1,24 +1,23 @@
 #pragma once
 #include "AbstractReadByteStrategy.h"
+#include "ReadByteStrategyFactory.h"
 
-class ReadTwoBytesStrategy : public AbstractReadByteStrategy
+namespace
 {
-	int read(std::string const & str, int & index) override
+	/// <summary>
+	/// Strategia definujaca odczytywanie dwoch bajtow jako znacznik
+	/// </summary>
+	/// <seealso cref="AbstractReadByteStrategy" />
+	class ReadTwoBytesStrategy : public AbstractReadByteStrategy
 	{
-		short a = short(
-			(unsigned char)(str[index + 0]) << 8 |
-			(unsigned char)(str[index + 1]) << 0);
-		return a;
-	}
+		int read(std::string const & str, int & index) override;
 
-	std::vector<char> writeToBytes(int paramInt) override
-	{
-		std::vector<char> bytes = shortToBytes(paramInt);
-		return bytes;
-	}
+		std::vector<char> writeToBytes(int paramInt) override;
 
-	int getSize() override
-	{
-		return 2;
-	}
-};
+		int getSize() override;
+	};
+
+	AbstractReadByteStrategy * getInstance() { return new ReadTwoBytesStrategy; }
+	const ReadStrategy name = ReadStrategy::Short;
+	const bool registered = ReadByteStrategyFactory::Instance().registerStrategy(name, getInstance);
+}

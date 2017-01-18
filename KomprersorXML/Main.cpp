@@ -14,9 +14,8 @@ int main()
 #endif
 
 	CompresorXml cXml;
-	cXml.encode("samples/part.xml");
-	//cXml.saveEncodedToFile("samples/SwissProt_comp.xml");
-	cXml.readEncodedBinaryFile("samples/part.xml.bin", "samples/part.2.xml");
+	cXml.encode("samples/part.xml", "samples/part.xml.bin");
+	cXml.decode("samples/part.xml.bin", "samples/part.2.xml");
 
 	return 0;
 }

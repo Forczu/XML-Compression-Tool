@@ -1,24 +1,19 @@
 #pragma once
+#include "ReadByteStrategyFactory.h"
 #include "AbstractReadByteStrategy.h"
 
-class ReadOneBytesStrategy : public AbstractReadByteStrategy
+namespace
 {
-	int read(std::string const & str, int & index) override
+	class ReadOneByteStrategy : public AbstractReadByteStrategy
 	{
-		char a = str[index];
-		return a;
-	}
+		int read(std::string const & str, int & index) override;
 
-	std::vector<char> writeToBytes(int paramInt) override
-	{
-		std::vector<char> bytes;
-		auto a = intToByte(paramInt);
-		bytes.push_back(a);
-		return bytes;
-	}
+		std::vector<char> writeToBytes(int paramInt) override;
 
-	int getSize() override
-	{
-		return 1;
-	}
-};
+		int getSize() override;
+	};
+
+	AbstractReadByteStrategy * getInstance() { return new ReadOneByteStrategy; }
+	const ReadStrategy name = ReadStrategy::Char;
+	const bool registered = ReadByteStrategyFactory::Instance().registerStrategy(name, getInstance);
+}
