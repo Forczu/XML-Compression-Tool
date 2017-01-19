@@ -30,9 +30,9 @@ protected:
 
 	std::vector<char> valueTypes;
 
-	static const char NEXT_ATTRIBUTE_SIGN = -0x44;
-	static const char NEXT_CHILDREN_SIGN = -0x46;
-	static const char NEXT_NODE_END_SIGN = -0x47;
+	static const char ATTRIBUTE_SIGN = -0x44;
+	static const char CHILDREN_SIGN = -0x46;
+	static const char NODE_END_SIGN = -0x47;
 
 	/// <summary>
 	/// Struktura reprezentujaca oryginalny plik Xml
@@ -98,7 +98,8 @@ public:
 	/// </summary>
 	~CompresorXml()
 	{
-		delete _contents;
+		if (_contents)
+			delete _contents;
 	}
 
 	/// <summary>
@@ -117,6 +118,7 @@ public:
 		{
 			std::cout << ex.what() << std::endl;
 		}
+		delete _contents;
 	}
 
 	/// <summary>
@@ -141,28 +143,33 @@ public:
 		_markupStrategy = ReadByteStrategyFactory::Instance().create(markupNamesSaveStrategy);
 		_attributeStrategy = ReadByteStrategyFactory::Instance().create(attributeNamesSaveStrategy);
 		
-		changePositionForRangeCoder(file, source, pos, '!');
+		lzss.changePositionForRangeCoder(file, source, pos);
 		std::string markupNames = lzss.decode(source, pos);
 		readMap(_outputMarkupNameMap, markupNames);
 
-		changePositionForRangeCoder(file, source, pos, '!');
+		lzss.changePositionForRangeCoder(file, source, pos);
 		std::string attributeNames = lzss.decode(source, pos);
 		readMap(_outputAttributeNameMap, attributeNames);
 		
-		changePositionForRangeCoder(file, source, pos, '!');
+		lzss.changePositionForRangeCoder(file, source, pos);
 		std::string markupValueSource = lzss.decode(source, pos);
 
-		changePositionForRangeCoder(file, source, pos, '!');
+		lzss.changePositionForRangeCoder(file, source, pos);
 		std::string attributeValueSource = lzss.decode(source, pos);
 		
-		changePositionForRangeCoder(file, source, pos, '!');
+		lzss.changePositionForRangeCoder(file, source, pos);
 		std::string byteStr = lzss.decode(source, pos);
-		int index = 0;
-		readXml(byteStr, xml, index, markupValueSource, attributeValueSource, 0);
+		int index = 0, markupValueSourcePos = 0, attributeValueSourcePos = 0;
+		std::stack<std::string> lastOpenedNodes;
+		readXml(byteStr, xml, index, markupValueSource, attributeValueSource,
+			markupValueSourcePos, attributeValueSourcePos, lastOpenedNodes, 0);
 
 		std::ofstream out(target);
 		out << xml;
 		out.close();
+
+		_outputAttributeNameMap.clear();
+		_outputMarkupNameMap.clear();
 	}
 
 private:
@@ -176,7 +183,8 @@ private:
 		LzssCoder lzss;
 
 		auto root = _doc.first_node();
-		allMarkupsToHashMap(root);
+		int markupNameCounter = 0, attributeCounter = 0;
+		namesToHashMaps(root, markupNameCounter, attributeCounter);
 
 		ReadStrategy markupStr, attrStr;
 		if (_inputMarkupNameMap.size() <= CHAR_MAX)
@@ -219,6 +227,8 @@ private:
 
 		delete xml;
 		delete _markupStrategy, _attributeStrategy;
+		_inputMarkupNameMap.clear();
+		_inputAttributeNameMap.clear();
 	}
 
 	/// <summary>
@@ -261,12 +271,11 @@ private:
 	}
 
 	/// <summary>
-	/// Zapisuje wszystkie identyfikatory znacznikow w xmlu jako liczby do mapy
+	/// Zapisuje wszystkie nazwy znacznikow w xmlu jako liczby do mapy.
 	/// </summary>
-	/// <param name="firstNode">Pierwszy wezel.</param>
-	void allMarkupsToHashMap(xml_node<> * firstNode)
+	/// <param name="firstNode">The first node.</param>
+	void namesToHashMaps(xml_node<> * firstNode, int & markupNameCounter, int & attributeCounter)
 	{
-		static int markupNameCounter = 0, attributeCounter = 0;
 		// wezly
 		for (xml_node<>* node = firstNode; node; node = node->next_sibling())
 		{
@@ -285,7 +294,7 @@ private:
 			// dzieci w wezle
 			auto firstChild = node->first_node();
 			if (firstChild != NULL)
-				allMarkupsToHashMap(firstChild);
+				namesToHashMaps(firstChild, markupNameCounter, attributeCounter);
 		}
 	}
 
@@ -334,31 +343,6 @@ private:
 				str = "";
 			}
 		}
-	}
-
-	/// <summary>
-	/// Ustawia wskaznik pozycji na kolejne sekcje range codera
-	/// </summary>
-	/// <param name="file">Plik wejsciowy.</param>
-	/// <param name="source">Sciezka do pliku.</param>
-	/// <param name="pos">Pozycja w pliku, zostaje zmieniona.</param>
-	/// <param name="endSign">Znak rozpoczynajacy blok range codera.</param>
-	void changePositionForRangeCoder(std::ifstream & file, std::string const & source, int & pos, char endSign)
-	{
-		file.open(source, std::ios::binary | std::ios::app);
-		file.seekg(std::ios_base::beg);
-		file.seekg(pos);
-		char a;
-		std::streampos lastPos;
-		while (true)
-		{
-			lastPos = file.tellg();
-			file.read(&a, sizeof(char));
-			if (a == endSign)
-				break;
-		}
-		file.close();
-		pos = lastPos;
 	}
 
 	/// <summary>
@@ -523,7 +507,7 @@ private:
 			// zapis atrybutow wezla
 			for (xml_attribute<>* atr = node->first_attribute(); atr; atr = atr->next_attribute())
 			{
-				xml.push_back(NEXT_ATTRIBUTE_SIGN);
+				xml.push_back(ATTRIBUTE_SIGN);
 				// nazwa atrybutu
 				std::string attrName = atr->name();
 				int attrId = _inputAttributeNameMap[attrName];
@@ -558,11 +542,11 @@ private:
 				bool hasChildren = firstChild != NULL && strlen(firstChild->name()) != 0;
 				if (hasChildren)
 				{
-					xml.push_back(NEXT_CHILDREN_SIGN);
+					xml.push_back(CHILDREN_SIGN);
 					saveXml(firstChild, xml, markupValues, attributeValues);
 				}
 				// zapis znaku konca wezla
-				xml.push_back(NEXT_NODE_END_SIGN);
+				xml.push_back(NODE_END_SIGN);
 			}
 		}
 	}
@@ -577,17 +561,16 @@ private:
 	/// <param name="markupValueSource">Zrodlo wartosci wszystkich znacznikow.</param>
 	/// <param name="attributeValueSource">Zrodlo wartosci wszystkich atrybutow.</param>
 	/// <param name="tabulators">Poziom tabulacji.</param>
-	void readXml(std::string const & bytes, std::string & xml, int & index, std::string const & markupValueSource, std::string const & attributeValueSource, int tabulators)
+	void readXml(std::string const & bytes, std::string & xml, int & index, std::string const & markupValueSource, std::string const & attributeValueSource,
+		int & markupValueSourcePos, int & attributeValueSourcePos, std::stack<std::string> & lastOpenedNodes, int tabulators)
 	{
-		static int markupValueSourcePos = 0, attributeValueSourcePos = 0;
-		static std::stack<std::string> lastOpenedNodes;
 		int id, markupSize = _markupStrategy->getSize(), attributeSize = _attributeStrategy->getSize();
 		do
 		{
 			// poczatek linii
 			char nextFlag = bytes[index];
 			// flaga zamkniecia otwartego wezla
-			if (nextFlag == NEXT_NODE_END_SIGN)
+			if (nextFlag == NODE_END_SIGN)
 			{
 				++index;
 				std::string name = lastOpenedNodes.top();
@@ -604,7 +587,7 @@ private:
 				xml += '\t';
 			xml += '<' + nodeName;
 			nextFlag = bytes[index];
-			while (nextFlag == NEXT_ATTRIBUTE_SIGN)
+			while (nextFlag == ATTRIBUTE_SIGN)
 			{
 				++index;
 				id = _attributeStrategy->read(bytes, index);
@@ -616,7 +599,7 @@ private:
 				nextFlag = _attributeStrategy->read(bytes, index);
 			}
 			++index;
-			if (nextFlag == NEXT_NODE_END_SIGN)
+			if (nextFlag == NODE_END_SIGN)
 			{
 				xml += "/>\n";
 			}
@@ -625,11 +608,11 @@ private:
 				auto nodeValue = bytesToString(nextFlag, bytes, index, _markupStrategy, markupValueSource, markupValueSourcePos);
 				xml += '>' + nodeValue + "</" + nodeName + ">\n";
 			}
-			else if (nextFlag == NEXT_CHILDREN_SIGN)
+			else if (nextFlag == CHILDREN_SIGN)
 			{
 				xml += ">\n";
 				lastOpenedNodes.push(nodeName);
-				readXml(bytes, xml, index, markupValueSource, attributeValueSource, tabulators + 1);
+				readXml(bytes, xml, index, markupValueSource, attributeValueSource, markupValueSourcePos, attributeValueSourcePos, lastOpenedNodes, tabulators + 1);
 			}
 		} while (!lastOpenedNodes.empty());
 	}

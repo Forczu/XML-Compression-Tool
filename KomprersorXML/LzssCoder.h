@@ -8,6 +8,9 @@
 #include <vector>
 #include <unordered_map>
 
+/// <summary>
+/// Reprezentuje algorytm kompresji LZSS z koderem entropijnym.
+/// </summary>
 class LzssCoder
 {
 protected:
@@ -32,6 +35,7 @@ protected:
 	static const int COMPRESS = 1;
 	static const int DECOMPRESS = 0;
 	static const int MAX_LITTLE_OFFSET = 250;
+	static const char START_SIGN = '!';
 	
 	/// <summary>
 	/// Bufor na wczytane dane
@@ -44,6 +48,12 @@ protected:
 	MyMap myMap;
 
 public:
+	/// <summary>
+	/// Kompresuje zrodlo znakow do pliku wyjsciowego.
+	/// </summary>
+	/// <param name="source">Zrodlo znakow.</param>
+	/// <param name="target">Sciezka do pliku wyjsciowego.</param>
+	/// <param name="letterAlphabetSize">Rozmiar alfabetu wejsciowego.</param>
 	void encode(std::string const & source, std::string const & target, int letterAlphabetSize = LETTER_ALPHABET_SIZE)
 	{
 		toBuffer(source);
@@ -51,6 +61,12 @@ public:
 		delete[] _buffer;
 	}
 
+	/// <summary>
+	/// Kompresuje zrodlo znakow do pliku wyjsciowego.
+	/// </summary>
+	/// <param name="source">Zrodlo znakow.</param>
+	/// <param name="target">Sciezka do pliku wyjsciowego.</param>
+	/// <param name="letterAlphabetSize">Rozmiar alfabetu wejsciowego.</param>
 	void encode(std::vector<int> const & source, std::string const & target, int letterAlphabetSize = LETTER_ALPHABET_SIZE)
 	{
 		toBuffer(source);
@@ -58,6 +74,12 @@ public:
 		delete[] _buffer;
 	}
 
+	/// <summary>
+	/// Kompresuje zrodlo znakow do pliku wyjsciowego.
+	/// </summary>
+	/// <param name="source">Zrodlo znakow.</param>
+	/// <param name="target">Sciezka do pliku wyjsciowego.</param>
+	/// <param name="letterAlphabetSize">Rozmiar alfabetu.</param>
 	void encode(std::vector<std::string> const & source, std::string const & target, int letterAlphabetSize = LETTER_ALPHABET_SIZE)
 	{
 		toBuffer(source);
@@ -65,18 +87,25 @@ public:
 		delete[] _buffer;
 	}
 
+	/// <summary>
+	/// Kompresuje zrodlo znakow do pliku wyjsciowego.
+	/// </summary>
+	/// <param name="source">Zrodlo znakow.</param>
+	/// <param name="target">Sciezka do pliku wyjsciowego.</param>
+	/// <param name="letterAlphabetSize">Rozmiar alfabetu.</param>
 	void encode(std::vector<char> const & source, std::string const & target, int letterAlphabetSize = LETTER_ALPHABET_SIZE)
 	{
 		toBuffer(source);
 		encode(target, letterAlphabetSize);
 	}
 
-	void toBuffer(std::vector<char> const & source)
-	{
-		bufSize = source.size();
-		_buffer = (char*)source.data();
-	}
-
+	/// <summary>
+	/// Dekompresuje plik zrodlowy do ciagu znakow.
+	/// </summary>
+	/// <param name="source">Sciezka do pliku wejsciowego.</param>
+	/// <param name="pos">Pozycja od ktorej rozpoczac dekompresje.</param>
+	/// <param name="letterAlphabetSize">Rozmiar alfabetu.</param>
+	/// <returns>Zdekompresowany ciag znakow</returns>
 	std::string decode(std::string const & source, int & pos, int letterAlphabetSize = LETTER_ALPHABET_SIZE)
 	{
 		auto in = freopen(source.c_str(), "rb", stdin);
@@ -135,7 +164,38 @@ public:
 		return output;
 	}
 
+	/// <summary>
+	/// Ustawia wskaznik pozycji na kolejne sekcje range codera
+	/// </summary>
+	/// <param name="file">Plik wejsciowy.</param>
+	/// <param name="source">Sciezka do pliku.</param>
+	/// <param name="pos">Pozycja w pliku, zostaje zmieniona.</param>
+	/// <param name="endSign">Znak rozpoczynajacy blok range codera.</param>
+	void changePositionForRangeCoder(std::ifstream & file, std::string const & source, int & pos)
+	{
+		file.open(source, std::ios::binary | std::ios::app);
+		file.seekg(std::ios_base::beg);
+		file.seekg(pos);
+		char a;
+		std::streampos lastPos;
+		while (true)
+		{
+			lastPos = file.tellg();
+			file.read(&a, sizeof(char));
+			if (a == START_SIGN)
+				break;
+		}
+		file.close();
+		pos = lastPos;
+	}
+
 protected:
+
+	void toBuffer(std::vector<char> const & source)
+	{
+		bufSize = source.size();
+		_buffer = (char*)source.data();
+	}
 
 	void toBuffer(std::string const & source)
 	{
@@ -197,7 +257,7 @@ protected:
 		bufPos = 0;
 		auto out = freopen(target.c_str(), "ab", stdout);
 		initializeModels(COMPRESS, letterAlphabetSize);
-		start_encoding(&rc, 33, 0);
+		start_encoding(&rc, START_SIGN, 0);
 
 		while (bufPos < bufSize)
 		{

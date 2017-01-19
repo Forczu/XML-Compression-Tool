@@ -14,8 +14,8 @@ int main()
 #endif
 
 	CompresorXml cXml;
-	cXml.encode("samples/part.xml", "samples/part.xml.bin");
-	cXml.decode("samples/part.xml.bin", "samples/part.2.xml");
+	cXml.encode("samples/SwissProt.xml", "samples/SwissProt.xml.bin");
+	cXml.decode("samples/SwissProt.xml.bin", "samples/SwissProt.2.xml");
 
 	return 0;
 }
